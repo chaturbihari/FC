@@ -124,7 +124,7 @@ def get_intermediate_links(quality_page_url):
         label = tag.get_text(strip=True)
         if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
             links.append((label, href))
-        logger.info(f"🔗 Intermediate: {link} | Provider: {provider}")
+            logger.info(f"🔗 Intermediate: {link} | Provider: {provider}")
     return links
 
 def extract_final_links(cloud_url):
@@ -142,7 +142,7 @@ def extract_final_links(cloud_url):
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
             links.append((label, action))
-    logger.info(f"🔍 Final links: {finals}")
+            logger.info(f"🔍 Final links: {links}")
     return links
 
 def get_title_from_intermediate(url):
