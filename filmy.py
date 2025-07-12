@@ -183,7 +183,6 @@ async def send_quality_message(title, quality, provider, links):
     except Exception as e:
         logger.error("Send error:\n" + traceback.format_exc())
         await app.send_message(OWNER_ID, f"❌ Send Error for `{title}`\n\n{e}")
-
 # --- Monitor Task ---
 async def monitor():
     logger.info("🚀 Monitor started")
@@ -213,12 +212,19 @@ async def monitor():
                     filmy.add(movie_url)
                     save_filmy(filmy)
                 except Exception as e:
-                    logger.error(f"Movie processing error: {movie_url} - {e}")
-                    await app.send_message(OWNER_ID, f"⚠️ Error on: {movie_url}\n\n{e}")
+                    logger.error("❌ Movie processing error:\n" + traceback.format_exc())
+                    await app.send_message(
+                        OWNER_ID,
+                        f"⚠️ Error while processing:\n`{movie_url}`\n\n{traceback.format_exc()[:4000]}"
+                    )
         except Exception as e:
-            logger.error(f"Monitor loop error: {e}")
-            await app.send_message(OWNER_ID, f"🚨 Monitor crashed:\n\n{e}")
+            logger.error("❌ Monitor loop error:\n" + traceback.format_exc())
+            await app.send_message(
+                OWNER_ID,
+                f"🚨 Monitor crashed:\n\n{traceback.format_exc()[:4000]}"
+            )
         await asyncio.sleep(300)
+
 
 # --- Start Bot ---
 async def main():
