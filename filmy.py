@@ -124,6 +124,7 @@ def get_intermediate_links(quality_page_url):
         label = tag.get_text(strip=True)
         if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
             links.append((label, href))
+        logger.info(f"🔗 Intermediate: {link} | Provider: {provider}")
     return links
 
 def extract_final_links(cloud_url):
@@ -141,6 +142,7 @@ def extract_final_links(cloud_url):
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
             links.append((label, action))
+    logger.info(f"🔍 Final links: {finals}")
     return links
 
 def get_title_from_intermediate(url):
@@ -184,6 +186,7 @@ async def send_quality_message(title, quality, provider, links):
 
 # --- Monitor Task ---
 async def monitor():
+    logger.info("🚀 Monitor started")
     filmy = load_filmy()
     logger.info(f"Loaded {len(filmy)} tracked movies")
     while True:
