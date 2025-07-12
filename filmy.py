@@ -27,9 +27,10 @@ BOT_TOKEN = os.environ.get("FF_BOT_TOKEN", "8091169950:AAGNyiZ8vqrqCiPhZcks-Av3l
 CHANNEL_ID = int(os.environ.get("FF_CHANNEL_ID", "-1002557597877"))
 OWNER_ID = int(os.environ.get("FF_OWNER_ID", "921365334"))
 filmy_FILE = "filmy.json"
-utils.get_peer_type = lambda peer_id: "channel" if str(peer_id).startswith("-100") else "user"
 BASE_URL = "https://filmyfly.loan/"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+utils.get_peer_type = lambda peer_id: "channel" if str(peer_id).startswith("-100") else "user"
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -38,31 +39,31 @@ logger = logging.getLogger("FilmyFlyBot")
 # --- Pyrogram Client ---
 app = Client("filmyfly-bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --- Keep Alive Flask Server ---
-flask_app = Flask('')
+# --- Keep Alive Server ---
+flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "✅ Bot is alive!"
+    return "✅ FilmyFly Bot is Alive!"
 
 def run_flask():
-    flask_app.run(host='0.0.0.0', port=8080)
+    flask_app.run(host="0.0.0.0", port=8080)
 
 def ping_self():
-    url = os.environ.get("SELF_PING_URL", "https://test-ujwm.onrender.com")  # 🔁 change this
+    url = os.environ.get("SELF_PING_URL", "https://test-ujwm.onrender.com")
     while True:
         try:
             requests.get(url)
-            print("✅ Self-ping sent")
+            print("✅ Self ping successful")
         except Exception as e:
-            print(f"⚠️ Self-ping failed: {e}")
+            print(f"❌ Self ping failed: {e}")
         time.sleep(120)
 
 def keep_alive():
     Thread(target=run_flask).start()
     Thread(target=ping_self).start()
 
-# --- File Tracker ---
+# --- Tracker ---
 def load_filmy():
     if os.path.exists(filmy_FILE):
         with open(filmy_FILE) as f:
@@ -73,7 +74,7 @@ def save_filmy(filmy):
     with open(filmy_FILE, "w") as f:
         json.dump(list(filmy), f, indent=2)
 
-# --- Safe Request Wrapper ---
+# --- Request Wrapper ---
 def safe_request(url, retries=2):
     for _ in range(retries):
         try:
@@ -85,14 +86,17 @@ def safe_request(url, retries=2):
         time.sleep(1)
     return None
 
-# --- Scraper Functions ---
+# --- Scraper ---
 def get_latest_movie_links():
     logger.info("Fetching homepage")
     r = safe_request(BASE_URL)
     if not r: return []
     soup = BeautifulSoup(r.text, "html.parser")
     blocks = soup.find_all("div", class_="A10")
-    links = [urljoin(BASE_URL, a["href"].strip()) for b in blocks if (a := b.find("a", href=True))]
+    links = [
+        urljoin(BASE_URL, a["href"].strip()) for b in blocks
+        if (a := b.find("a", href=True))
+    ]
     return list(dict.fromkeys(links))
 
 def get_quality_links(movie_url):
@@ -122,7 +126,8 @@ def get_intermediate_links(quality_page_url):
             if m:
                 href = m.group(1)
         label = tag.get_text(strip=True)
-        if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
+        if href and label and href.startswith("http") and not any(
+                x in label.lower() for x in ["login", "signup"]):
             links.append((label, href))
     return links
 
@@ -166,11 +171,11 @@ async def send_quality_message(title, quality, provider, links):
     msg += "\n🌐 Scraped from [FilmyFly](https://telegram.me/Silent_Bots)"
 
     try:
-        logger.info(f"Sending: {title} | {quality} | {provider}")
+        logger.info(f"Sending to channel: {title} | {quality} | {provider}")
         await app.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
-        logger.info(f"✅ Sent: {title}")
+        logger.info(f"✅ Sent message: {title}")
     except FloodWait as e:
-        logger.warning(f"⏳ Flood wait: {e.value}s for {title}")
+        logger.warning(f"⏳ Flood wait: sleeping {e.value}s for {title}")
         await asyncio.sleep(e.value)
         await send_quality_message(title, quality, provider, links)
     except Exception as e:
@@ -180,7 +185,7 @@ async def send_quality_message(title, quality, provider, links):
 # --- Monitor Task ---
 async def monitor():
     filmy = load_filmy()
-    logger.info(f"Loaded {len(filmy)} tracked movies")
+    logger.info(f"Loaded {len(filmy)} filmy entries")
     while True:
         try:
             movies = await asyncio.to_thread(get_latest_movie_links)
@@ -205,11 +210,11 @@ async def monitor():
                     filmy.add(movie_url)
                     save_filmy(filmy)
                 except Exception as e:
-                    logger.error(f"Movie processing error: {movie_url} - {e}")
+                    logger.error(f"Error while processing movie: {movie_url} - {e}")
                     await app.send_message(OWNER_ID, f"⚠️ Error on: {movie_url}\n\n{e}")
         except Exception as e:
             logger.error(f"Monitor loop error: {e}")
-            await app.send_message(OWNER_ID, f"🚨 Monitor crashed:\n\n{e}")
+            await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
         await asyncio.sleep(300)
 
 # --- Start Bot ---
