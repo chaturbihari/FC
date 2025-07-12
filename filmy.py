@@ -13,6 +13,9 @@ from collections import defaultdict
 import re
 import urllib3
 import time
+import traceback
+
+
 
 # --- Environment Setup ---
 nest_asyncio.apply()
@@ -146,23 +149,33 @@ def clean(text):
 
 # --- Telegram Messaging ---
 async def send_quality_message(title, quality, provider, links):
+    if not links:
+        logger.warning(f"Skipping empty link list for {title}")
+        return
+
     msg = f"🎬 `{clean(title)}`\n\n"
     msg += f"🔗 **Quality**: `{provider}`\n\n"
     for label, url in links:
         msg += f"• [{clean(label)}]({url})\n"
     msg += "\n🌐 Scraped from [FilmyFly](https://telegram.me/Silent_Bots)"
+
+    logger.info(f"Attempting to send message for: {title} | {provider}")
     try:
+        logger.info(f"Sending to channel: {title} | {quality} | {provider}")
         await app.send_message(chat_id=CHANNEL_ID,
                                text=msg,
                                parse_mode=ParseMode.MARKDOWN,
                                disable_web_page_preview=True)
+        logger.info(f"✅ Sent message: {title}")
     except FloodWait as e:
+        logger.warning(f"⏳ Flood wait: sleeping {e.value}s for {title}")
         await asyncio.sleep(e.value)
         await send_quality_message(title, quality, provider, links)
     except Exception as e:
-        logger.error(f"Send error: {e}")
-        await app.send_message(OWNER_ID, f"❌ Send Error for `{title}`\n\n{e}")
 
+        logger.error("Send error:\n" + traceback.format_exc())
+
+        await app.send_message(OWNER_ID, f"❌ Send Error for `{title}`\n\n{e}")
 
 # --- Monitor Task ---
 async def monitor():
@@ -219,5 +232,5 @@ async def main():
 
 
 
-# if __name__ == "__main__":
-#     asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
