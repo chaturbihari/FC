@@ -212,10 +212,12 @@ async def monitor():
 # --- Start Bot ---
 async def main():
     await app.start()
+    await app.send_message(CHANNEL_ID, "✅ Bot started and connected!")
     asyncio.create_task(monitor())
     await idle()
     await app.stop()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
