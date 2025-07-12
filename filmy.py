@@ -49,7 +49,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=8080)
 
 def ping_self():
-    url = os.environ.get("SELF_PING_URL", "https://your-app-url.onrender.com")  # 🔁 change this
+    url = os.environ.get("SELF_PING_URL", "https://test-ujwm.onrender.com")  # 🔁 change this
     while True:
         try:
             requests.get(url)
