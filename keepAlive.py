@@ -24,7 +24,7 @@ def ping_self():
             print("✅ Self-ping sent")
         except Exception as e:
             print(f"⚠️ Self-ping failed: {e}")
-        time.sleep(240)  # 4 minutes
+        time.sleep(120)  # 4 minutes
 
 
 def keep_alive():
