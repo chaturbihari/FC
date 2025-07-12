@@ -165,10 +165,15 @@ async def send_quality_message(title, quality, provider, links):
         msg += f"• [{clean(label)}]({url})\n"
     msg += "\n🌐 Scraped from [FilmyFly](https://telegram.me/Silent_Bots)"
 
-    try:
-        logger.info(f"Sending: {title} | {quality} | {provider}")
-        await app.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
-        logger.info(f"✅ Sent: {title}")
+   try:
+        logger.info(f"Sending to channel: {title} | {quality} | {provider}")
+        sent_msg = await app.send_message(
+            chat_id=CHANNEL_ID,
+            text=msg,
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
+        logger.info(f"✅ Sent message ID {sent_msg.id} for {title}")
     except FloodWait as e:
         logger.warning(f"⏳ Flood wait: {e.value}s for {title}")
         await asyncio.sleep(e.value)
