@@ -2,21 +2,19 @@ import os
 import json
 import logging
 import asyncio
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from pyrogram import Client, idle, utils
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait
-import nest_asyncio
 from collections import defaultdict
 import re
-import urllib3
 import time
+from playwright.async_api import async_playwright
+import nest_asyncio
 
 # --- Environment Setup ---
 nest_asyncio.apply()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 API_ID = int(os.environ.get("API_ID", "25833520"))
 API_HASH = os.environ.get("API_HASH", "7d012a6cbfabc2d0436d7a09d8362af7")
@@ -46,17 +44,18 @@ def save_filmy(filmy):
     with open(filmy_FILE, "w") as f:
         json.dump(list(filmy), f, indent=2)
 
-# --- Safe Request Wrapper ---
+# --- Basic HTTP Fetcher for initial pages ---
+import requests
+
 def safe_request(url, retries=2):
     for _ in range(retries):
         try:
-            r = requests.get(url, headers=HEADERS, timeout=15)
+            r = requests.get(url, headers=HEADERS, timeout=15, verify=False)
             if r.status_code == 200:
                 return r
         except Exception as e:
             logger.warning(f"Request failed: {e}")
         time.sleep(1)
-    logger.error(f"❌ Failed to fetch URL after retries: {url}")
     return None
 
 # --- Scraper Functions ---
@@ -66,14 +65,10 @@ def get_latest_movie_links():
     if not r: return []
     soup = BeautifulSoup(r.text, "html.parser")
     blocks = soup.find_all("div", class_="A10")
-    links = [
-        urljoin(BASE_URL, a["href"].strip()) for b in blocks
-        if (a := b.find("a", href=True))
-    ]
+    links = [urljoin(BASE_URL, a["href"].strip()) for b in blocks if (a := b.find("a", href=True))]
     return list(dict.fromkeys(links))
 
 def get_quality_links(movie_url):
-    logger.info(f"🔎 Fetching quality links: {movie_url}")
     r = safe_request(movie_url)
     if not r: return {}
     soup = BeautifulSoup(r.text, "html.parser")
@@ -87,71 +82,62 @@ def get_quality_links(movie_url):
             qlinks[quality].append(full)
     return dict(qlinks)
 
-def get_intermediate_links(quality_page_url):
-    logger.info(f"🌐 Visiting quality page: {quality_page_url}")
-    r = safe_request(quality_page_url)
-    if not r:
-        logger.warning("❌ Failed to load quality page")
-        return []
-    soup = BeautifulSoup(r.text, "html.parser")
+async def extract_links_with_playwright(url, types=("a", "button")):
     links = []
-    for tag in soup.find_all(["a", "button"]):
-        href = tag.get("href") or tag.get("data-href")
-        if not href:
-            onclick = tag.get("onclick", "")
-            m = re.search(r"location\.href='([^']+)'", onclick)
-            if m:
-                href = m.group(1)
-        label = tag.get_text(strip=True)
-        if href and label and href.startswith("http") and not any(
-            x in label.lower() for x in ["login", "signup"]):
-            links.append((label, href))
-    logger.info(f"🧪 Found {len(links)} intermediate links")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto(url, timeout=30000)
+            await page.wait_for_timeout(3000)
+            elements = await page.locator(f'{types[0]},{types[1]}').all()
+            for el in elements:
+                href = await el.get_attribute("href") or await el.get_attribute("data-href")
+                if not href:
+                    onclick = await el.get_attribute("onclick") or ""
+                    m = re.search(r"location\\.href='([^']+)'", onclick)
+                    if m:
+                        href = m.group(1)
+                label = (await el.inner_text()).strip()
+                if href and href.startswith("http") and label and not any(x in label.lower() for x in ["login", "signup"]):
+                    links.append((label, href))
+            await browser.close()
+    except Exception as e:
+        logger.warning(f"Playwright error: {e}")
     return links
 
-def extract_final_links(cloud_url):
-    logger.info(f"📡 Extracting from: {cloud_url}")
-    r = safe_request(cloud_url)
-    if not r:
-        logger.warning(f"❌ Final link fetch failed: {cloud_url}")
-        return []
-    soup = BeautifulSoup(r.text, "html.parser")
-    links = []
-    for tag in soup.find_all(["a", "button"]):
-        href = tag.get("href") or tag.get("data-href")
-        label = tag.get_text(strip=True)
-        if href and label and href.startswith("http"):
-            links.append((label, href))
-    for form in soup.find_all("form"):
-        action = form.get("action")
-        label = form.get_text(strip=True)
-        if action and action.startswith("http"):
-            links.append((label, action))
-    logger.info(f"🔗 Found {len(links)} final links")
-    return links
+get_intermediate_links = extract_links_with_playwright
+extract_final_links = extract_links_with_playwright
 
-def get_title_from_intermediate(url):
-    r = safe_request(url)
-    if not r: return "Untitled"
-    soup = BeautifulSoup(r.text, "html.parser")
-    title = soup.find("title")
-    return title.text.strip() if title else "Untitled"
+async def get_title_from_intermediate(url):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            await page.goto(url, timeout=30000)
+            title = await page.title()
+            await browser.close()
+            return title.strip()
+    except:
+        return "Untitled"
 
 def clean(text):
     return re.sub(r"[\[\]_`*]", "", text)
 
 # --- Telegram Messaging ---
 async def send_quality_message(title, quality, provider, links):
-    msg = f"🎬 `{clean(title)}`\n\n"
+    msg = f"\n🎬 `{clean(title)}`\n\n"
     msg += f"🔗 **Quality**: `{provider}`\n\n"
     for label, url in links:
         msg += f"• [{clean(label)}]({url})\n"
     msg += "\n🌐 Scraped from [FilmyFly](https://telegram.me/Silent_Bots)"
     try:
-        await app.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
-        logger.info(f"✅ Sent: {title} [{quality}] by {provider}")
+        await app.send_message(chat_id=CHANNEL_ID,
+                               text=msg,
+                               parse_mode=ParseMode.MARKDOWN,
+                               disable_web_page_preview=True)
     except FloodWait as e:
-        logger.warning(f"⏱ Flood wait: {e.value} sec")
         await asyncio.sleep(e.value)
         await send_quality_message(title, quality, provider, links)
     except Exception as e:
@@ -173,17 +159,14 @@ async def monitor():
                     qlinks = await asyncio.to_thread(get_quality_links, movie_url)
                     for quality, view_urls in qlinks.items():
                         for view_url in view_urls:
-                            intermediate_links = await asyncio.to_thread(get_intermediate_links, view_url)
-                            if not intermediate_links:
-                                logger.warning(f"⚠️ No intermediate links: {view_url}")
+                            intermediate_links = await get_intermediate_links(view_url)
                             for provider, link in intermediate_links:
-                                finals = await asyncio.to_thread(extract_final_links, link)
+                                finals = await extract_final_links(link)
                                 if not finals:
-                                    logger.warning(f"⚠️ No final links, retrying: {link}")
                                     await asyncio.sleep(2)
-                                    finals = await asyncio.to_thread(extract_final_links, link)
+                                    finals = await extract_final_links(link)
                                 if finals:
-                                    title = await asyncio.to_thread(get_title_from_intermediate, link)
+                                    title = await get_title_from_intermediate(link)
                                     await send_quality_message(title, quality, provider, finals)
                     filmy.add(movie_url)
                     save_filmy(filmy)
@@ -198,7 +181,6 @@ async def monitor():
 # --- Start Bot ---
 async def main():
     await app.start()
-    await app.send_message(OWNER_ID, "✅ Bot started and connected.")
     asyncio.create_task(monitor())
     await idle()
     await app.stop()
