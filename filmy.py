@@ -82,7 +82,7 @@ def get_quality_links(movie_url):
             qlinks[quality].append(full)
     return dict(qlinks)
 
-def get_intermediate_links_playwright(url):
+def extract_links_with_playwright(url):
     links = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
