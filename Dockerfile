@@ -21,4 +21,4 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Set the command to run your bot
-CMD ["python", "filmy.py"]
+CMD ["python", "main.py"]
