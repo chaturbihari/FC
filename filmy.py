@@ -119,21 +119,33 @@ def get_quality_links(movie_url):
             q[qname].append(urljoin(BASE_URL, a["href"]))
     return q
 
-def get_intermediate_links(view_url):
-    r = safe_request(view_url)
-    if not r: return []
+def get_intermediate_links(quality_page_url):
+    r = safe_request(quality_page_url)
+    if not r:
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
-    out = []
-    for tag in soup.find_all(["a","button"]):
-        href = tag.get("href") or tag.get("data-href")
-        if not href:
-            onclick = tag.get("onclick","")
-            m = re.search(r"location\.href='([^']+)'", onclick)
-            if m: href = m.group(1)
-        lbl = tag.get_text(strip=True)
-        if href and lbl and href.startswith("http") and all(x not in lbl.lower() for x in ("login","signup")):
-            out.append((lbl, href))
-    return out
+    links = []
+
+    for a in soup.find_all("a", href=True):
+        href = a.get("href")
+        label = a.get_text(strip=True)  # This now gets text even inside nested divs!
+        if href and label and href.startswith("http") and not any(
+            x in label.lower() for x in ["login", "signup"]
+        ):
+            links.append((label, href))
+
+    # OPTIONAL: Check inside scripts for JS redirects (fallback)
+    for script in soup.find_all("script"):
+        if "location.href" in script.text:
+            match = re.search(r'location\.href\s*=\s*[\'"]([^\'"]+)[\'"]', script.text)
+            if match:
+                url = match.group(1)
+                if url.startswith("/"):
+                    url = urljoin(quality_page_url, url)
+                links.append(("JS Redirect", url))
+
+    return links
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
