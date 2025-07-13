@@ -174,16 +174,18 @@ async def monitor():
                     logger.error(f"Error while processing movie: {movie_url} - {e}")
                     await app.send_message(OWNER_ID, f"⚠️ Error on: {movie_url}\n\n{e}")
         except Exception as e:
-            logger.error(f"Monitor loop error: {e}")
-            await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
-        await asyncio.sleep(300)
+            logger.exception("Fatal monitor loop error:")
+            await app.send_message(OWNER_ID, f"💥 Fatal error in loop:\n\n{e}")
+            await asyncio.sleep(30)  
 
 # --- Start Bot ---
 async def main():
     await app.start()
     asyncio.create_task(monitor())
     await idle()
+    logger.warning("❗ idle() exited — bot is shutting down.")
     await app.stop()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
