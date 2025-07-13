@@ -4,3 +4,4 @@ requests
 beautifulsoup4
 nest_asyncio
 flask
+playwright>=1.43.0
