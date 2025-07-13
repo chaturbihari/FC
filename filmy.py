@@ -70,7 +70,7 @@ async def get_html(page, url):
         return None
 
 async def get_latest_movie_links(playwright):
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(headless=False)
     page = await browser.new_page()
     html = await get_html(page, BASE_URL)
     if not html:
@@ -83,7 +83,7 @@ async def get_latest_movie_links(playwright):
     return list(dict.fromkeys(links))
 
 async def get_quality_links(playwright, movie_url):
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(headless=False)
     page = await browser.new_page()
     html = await get_html(page, movie_url)
     qlinks = defaultdict(list)
@@ -100,7 +100,7 @@ async def get_quality_links(playwright, movie_url):
     return dict(qlinks)
 
 async def get_intermediate_links(playwright, quality_page_url):
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(headless=False)
     page = await browser.new_page()
     html = await get_html(page, quality_page_url)
     links = []
@@ -120,7 +120,7 @@ async def get_intermediate_links(playwright, quality_page_url):
     return links
 
 async def extract_final_links(playwright, cloud_url):
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(headless=False)
     page = await browser.new_page()
     html = await get_html(page, cloud_url)
     links = []
@@ -140,7 +140,7 @@ async def extract_final_links(playwright, cloud_url):
     return links
 
 async def get_title_from_intermediate(playwright, url):
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(headless=False)
     page = await browser.new_page()
     html = await get_html(page, url)
     title = "Untitled"
