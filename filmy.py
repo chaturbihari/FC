@@ -125,29 +125,19 @@ async def get_intermediate_links_playwright(url):
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-
-            # 🧼 Block popups or new tabs
-            context.on("page", lambda page: page.close())
-
-            page = await context.new_page()
-            await page.goto(url, timeout=30000)
-
-            # 💥 Block window.open & target="_blank"
-            await page.add_init_script("""
-                window.open = () => null;
-                const intercept = (e) => {
-                    const a = e.target.closest("a[target='_blank']");
-                    if (a) {
-                        a.removeAttribute("target");
-                    }
-                };
-                document.addEventListener("click", intercept, true);
+            context = await browser.new_context(user_agent=HEADERS["User-Agent"])
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             """)
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+            except Exception as e:
+                logger.warning(f"❌ Playwright page.goto failed: {e}")
+                return []
 
             await page.wait_for_timeout(2000)
 
-            # 🔍 Scrape links
             elements = await page.query_selector_all("a, button")
             for el in elements:
                 href = await el.get_attribute("href") or await el.get_attribute("data-href")
@@ -159,21 +149,13 @@ async def get_intermediate_links_playwright(url):
                         href = match.group(1)
                 if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
                     links.append((label, href))
-
-            # 🧪 If no links, try clicking buttons again (force one reclick)
-            if not links:
-                await page.mouse.click(300, 300)  # Rough center click
-                await page.wait_for_timeout(2000)
-                elements = await page.query_selector_all("a, button")
-                for el in elements:
-                    href = await el.get_attribute("href") or await el.get_attribute("data-href")
-                    label = (await el.inner_text()).strip()
-                    if href and label and href.startswith("http"):
-                        links.append((label, href))
-
-            await browser.close()
     except Exception as e:
         logger.warning(f"Playwright fallback failed: {e}")
+    finally:
+        try:
+            await browser.close()
+        except:
+            pass
     return links
 
 
@@ -182,7 +164,10 @@ async def extract_final_links_playwright(cloud_url):
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
+            context = await browser.new_context(user_agent=HEADERS["User-Agent"])
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            """)
             page = await context.new_page()
             logger.debug(f"Playwright: Navigating to {cloud_url}")
             resp = await page.goto(cloud_url, wait_until='networkidle', timeout=45000)
