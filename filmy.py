@@ -122,24 +122,56 @@ async def get_intermediate_links_playwright(url):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
+
+            # 🧼 Block popups or new tabs
+            context.on("page", lambda page: page.close())
+
             page = await context.new_page()
             await page.goto(url, timeout=30000)
-            await page.wait_for_timeout(1000)
+
+            # 💥 Block window.open & target="_blank"
+            await page.add_init_script("""
+                window.open = () => null;
+                const intercept = (e) => {
+                    const a = e.target.closest("a[target='_blank']");
+                    if (a) {
+                        a.removeAttribute("target");
+                    }
+                };
+                document.addEventListener("click", intercept, true);
+            """)
+
+            await page.wait_for_timeout(2000)
+
+            # 🔍 Scrape links
             elements = await page.query_selector_all("a, button")
             for el in elements:
                 href = await el.get_attribute("href") or await el.get_attribute("data-href")
                 label = (await el.inner_text()).strip()
                 if not href:
                     onclick = await el.get_attribute("onclick") or ""
-                    match = re.search(r"location\.href='([^']+)'", onclick)
+                    match = re.search(r"location\\.href=['\"]([^'\"]+)['\"]", onclick)
                     if match:
                         href = match.group(1)
                 if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
                     links.append((label, href))
+
+            # 🧪 If no links, try clicking buttons again (force one reclick)
+            if not links:
+                await page.mouse.click(300, 300)  # Rough center click
+                await page.wait_for_timeout(2000)
+                elements = await page.query_selector_all("a, button")
+                for el in elements:
+                    href = await el.get_attribute("href") or await el.get_attribute("data-href")
+                    label = (await el.inner_text()).strip()
+                    if href and label and href.startswith("http"):
+                        links.append((label, href))
+
             await browser.close()
     except Exception as e:
         logger.warning(f"Playwright fallback failed: {e}")
     return links
+
 
 async def extract_final_links_playwright(cloud_url):
     links = []
