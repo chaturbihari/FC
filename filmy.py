@@ -13,7 +13,7 @@ from collections import defaultdict
 import re
 import urllib3
 import nest_asyncio
-
+from playwright.async_api import async_playwright
 # ── Environment Setup ─────────────────────────────────────────────────────────
 nest_asyncio.apply()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -119,34 +119,32 @@ def get_quality_links(movie_url):
             q[qname].append(urljoin(BASE_URL, a["href"]))
     return q
 
-def get_intermediate_links(quality_page_url):
-    r = safe_request(quality_page_url)
-    if not r:
-        return []
 
-    soup = BeautifulSoup(r.text, "html.parser")
+
+async def get_intermediate_links(quality_page_url):
     links = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)  # headless=False to watch
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto(quality_page_url, timeout=20000)
+            await page.wait_for_timeout(3000)  # Wait for JS to load buttons
 
-    # 🔍 Search <a> tags, even if label is in a nested <div>
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        label = a.get_text(strip=True)  # Handles nested <div> inside <a>
-        if href and label and href.startswith("http") and not any(
-            x in label.lower() for x in ["login", "signup"]
-        ):
-            links.append((label, href))
+            # ✅ Select all <a> inside divs like your screenshot
+            anchors = await page.query_selector_all("a[href^='http']")
+            for a in anchors:
+                href = await a.get_attribute("href")
+                label = await a.inner_text()
+                if href and label and not any(x in label.lower() for x in ["login", "signup"]):
+                    links.append((label.strip(), href.strip()))
 
-    # 🔄 Also check for JS redirect fallback
-    for script in soup.find_all("script"):
-        if "location.href" in script.text:
-            match = re.search(r'location\.href\s*=\s*[\'"]([^\'"]+)[\'"]', script.text)
-            if match:
-                redirect_url = match.group(1)
-                if redirect_url.startswith("/"):
-                    redirect_url = urljoin(quality_page_url, redirect_url)
-                links.append(("JS Redirect", redirect_url))
+            await browser.close()
+    except Exception as e:
+        logger.warning(f"Playwright error on {quality_page_url}: {e}")
 
     return links
+
 
 
 def extract_final_links(cloud_url):
@@ -219,7 +217,7 @@ async def monitor():
                 qlinks = await asyncio.to_thread(get_quality_links, murl)
                 for quality, views in qlinks.items():
                     for vurl in views:
-                        ilinks = await asyncio.to_thread(get_intermediate_links, vurl)
+                        ilinks = await get_intermediate_links(vurl)
                         if not ilinks:
                             logger.warning(f"⚠️ No intermediate links for: {vurl}")
                         
