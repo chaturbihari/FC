@@ -162,31 +162,49 @@ async def get_intermediate_links(view_url: str) -> list[tuple[str, str]]:
         return []
 
 
-def extract_final_links(cloud_url):
-    r = safe_request(cloud_url)
-    if not r:
+async def extract_final_links_playwright(cloud_url: str) -> list[tuple[str, str]]:
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+                timezone_id="Asia/Kolkata",
+                viewport={"width": 1280, "height": 720}
+            )
+            page = await context.new_page()
+
+            await page.goto(cloud_url, wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(3000)
+
+            # optional: close any popup
+            page.on("popup", lambda popup: asyncio.create_task(popup.close()))
+
+            # Collect any links from .container or general anchors
+            container = await page.query_selector("div.container")
+            anchors = await container.query_selector_all("a") if container else await page.query_selector_all("a")
+
+            results = []
+            for a in anchors:
+                href = await a.get_attribute("href")
+                text = (await a.inner_text()).strip()
+                if href and href.startswith("http") and text:
+                    results.append((text, href))
+
+            logger.info(f"[PW extract_final_links] Found {len(results)} links at {cloud_url}")
+            for lbl, link in results:
+                logger.info(f"→ {lbl}: {link}")
+
+            await browser.close()
+            return results
+
+    except Exception as e:
+        logger.warning(f"[PW extract_final_links] Error at {cloud_url}: {e}")
         return []
 
-    soup = BeautifulSoup(r.text, "html.parser")
-    links = []
-
-    for tag in soup.find_all(["a", "button"]):
-        href = tag.get("href") or tag.get("data-href")
-        label = tag.get_text(strip=True)
-        if href and label and href.startswith("http"):
-            links.append((label, href))
-
-    for form in soup.find_all("form"):
-        action = form.get("action")
-        label = form.get_text(strip=True)
-        if action and action.startswith("http"):
-            links.append((label, action))
-
-    logger.info(f"[extract_final_links] Found {len(links)} links at {cloud_url}")
-    for label, link in links:
-        logger.info(f"→ {label}: {link}")
-
-    return links
 
 def get_title_from_intermediate(url):
     r = safe_request(url)
@@ -257,7 +275,7 @@ async def monitor():
                             if not finals:
                                 logger.warning(f"No final links for: {il}")
                                 await asyncio.sleep(2)
-                                finals = await asyncio.to_thread(extract_final_links, il)
+                                finals = await extract_final_links_playwright(il)
                             if finals:
                                 title = await asyncio.to_thread(get_title_from_intermediate, il)
                                 await send_quality_message(title, quality, provider, finals)
