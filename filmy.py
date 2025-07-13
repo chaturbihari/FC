@@ -177,6 +177,9 @@ def extract_final_links(cloud_url):
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
             links.append((label, action))
+    logger.info(f"[extract_final_links] Found {len(out)} links at {cloud_url}")
+    for label, link in out:
+        logger.info(f"→ {label}: {link}")
     return links
 
 def get_title_from_intermediate(url):
