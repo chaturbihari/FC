@@ -93,17 +93,33 @@ def get_quality_links(movie_url):
             qlinks[quality].append(full)
     return dict(qlinks)
 
-async def get_intermediate_links(quality_page_url):
-    logger.debug(f"Extracting intermediate links from (playwright): {quality_page_url}")
+def get_intermediate_links(quality_page_url):
+    r = safe_request(quality_page_url)
+    if not r or "Just a moment" in r.text:
+        return None  # force fallback to playwright
+    soup = BeautifulSoup(r.text, "html.parser")
+    links = []
+    for tag in soup.find_all(["a", "button"]):
+        href = tag.get("href") or tag.get("data-href")
+        if not href:
+            onclick = tag.get("onclick", "")
+            m = re.search(r"location\.href='([^']+)'", onclick)
+            if m:
+                href = m.group(1)
+        label = tag.get_text(strip=True)
+        if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
+            links.append((label, href))
+    return links
+
+async def get_intermediate_links_playwright(url):
     links = []
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             page = await context.new_page()
-            await page.goto(quality_page_url, timeout=30000)
-            await page.wait_for_timeout(1000)  # wait for JS to render
-
+            await page.goto(url, timeout=30000)
+            await page.wait_for_timeout(1000)
             elements = await page.query_selector_all("a, button")
             for el in elements:
                 href = await el.get_attribute("href") or await el.get_attribute("data-href")
@@ -114,13 +130,12 @@ async def get_intermediate_links(quality_page_url):
                     if match:
                         href = match.group(1)
                 if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
-                    logger.debug(f"Playwright Intermediate Link: {label} => {href}")
                     links.append((label, href))
             await browser.close()
     except Exception as e:
-        logger.error(f"❌ Playwright intermediate fetch failed: {e}")
-    logger.debug(f"Playwright: Found {len(links)} intermediate links")
+        logger.warning(f"Playwright fallback failed: {e}")
     return links
+
 
 
 def extract_final_links(cloud_url):
@@ -191,7 +206,10 @@ async def monitor():
                     qlinks = await asyncio.to_thread(get_quality_links, movie_url)
                     for quality, view_urls in qlinks.items():
                         for view_url in view_urls:
-                            intermediate_links = await get_intermediate_links(view_url)
+                            intermediate_links = await asyncio.to_thread(get_intermediate_links, view_url)
+                            if intermediate_links is None or len(intermediate_links) == 0:
+                                logger.info(f"Fallback to Playwright: {view_url}")
+                                intermediate_links = await get_intermediate_links_playwright(view_url)
                             for provider, link in intermediate_links:
                                 finals = await asyncio.to_thread(extract_final_links, link)
                                 if not finals:
