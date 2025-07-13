@@ -82,29 +82,39 @@ def get_quality_links(movie_url):
             qlinks[quality].append(full)
     return dict(qlinks)
 
-async def extract_links_with_playwright(url, types=("a", "button")):
+def get_intermediate_links_playwright(url):
     links = []
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            page = await context.new_page()
-            await page.goto(url, timeout=30000)
-            await page.wait_for_timeout(3000)
-            elements = await page.locator(f'{types[0]},{types[1]}').all()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        try:
+            page.goto(url, timeout=30000)
+            page.wait_for_selector("a, button", timeout=10000)
+            elements = page.query_selector_all("a, button")
+
             for el in elements:
-                href = await el.get_attribute("href") or await el.get_attribute("data-href")
-                if not href:
-                    onclick = await el.get_attribute("onclick") or ""
-                    m = re.search(r"location\\.href='([^']+)'", onclick)
+                href = el.get_attribute("href") or el.get_attribute("data-href")
+                onclick = el.get_attribute("onclick")
+                label = el.inner_text().strip()
+
+                # Support onclick-based navigation
+                if not href and onclick:
+                    m = re.search(r"location\.href='([^']+)'", onclick)
                     if m:
                         href = m.group(1)
-                label = (await el.inner_text()).strip()
-                if href and href.startswith("http") and label and not any(x in label.lower() for x in ["login", "signup"]):
+
+                # Only valid, direct, labeled download links
+                if (
+                    href and href.startswith("http") and
+                    label and "download" in label.lower() and
+                    all(x not in label.lower() for x in ["login", "signup"])
+                ):
                     links.append((label, href))
-            await browser.close()
-    except Exception as e:
-        logger.warning(f"Playwright error: {e}")
+                    break  # Stop at the first relevant download button
+        except Exception as e:
+            print("Playwright error:", e)
+        finally:
+            browser.close()
     return links
 
 get_intermediate_links = extract_links_with_playwright
