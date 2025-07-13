@@ -49,11 +49,20 @@ async def get_html(page, url):
 
         await page.route("**/*", handle_route)
         page.on("popup", lambda popup: asyncio.create_task(popup.close()))
+
         await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+
+        # ✅ Wait for known element to ensure JS ran
+        try:
+            await page.wait_for_selector("div.dlink.dl", timeout=5000)
+        except Exception:
+            logger.warning(f"⚠️ Selector div.dlink.dl not found in time on {url}")
+
         return await page.content()
     except Exception as e:
         logger.warning(f"❌ Failed to load {url}: {e}")
         return None
+
 
 async def get_latest_movie_links(playwright):
     logger.info("📥 Fetching latest movie links...")
@@ -94,7 +103,10 @@ async def get_quality_links(playwright, movie_url):
 
 async def get_intermediate_links(playwright, quality_page_url):
     logger.info(f"➡️ Getting intermediate links from: {quality_page_url}")
-    browser = await playwright.chromium.launch(headless=True)
+    browser = await playwright.chromium.launch(
+    headless=True,
+    args=["--no-sandbox", "--disable-setuid-sandbox"]
+    )
     page = await browser.new_page()
     html = await get_html(page, quality_page_url)
     links = []
