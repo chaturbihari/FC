@@ -27,7 +27,11 @@ OWNER_ID = int(os.environ.get("FF_OWNER_ID", "921365334"))
 filmy_FILE = "filmy.json"
 utils.get_peer_type = lambda peer_id: "channel" if str(peer_id).startswith("-100") else "user"
 BASE_URL = "https://filmyfly.party/"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
+    "Referer": "https://linkmake.in/",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 # --- Logging Setup ---
 logging.basicConfig(
