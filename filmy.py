@@ -59,11 +59,14 @@ def save_filmy(filmy):
 
 
 # --- Safe Request Wrapper ---
-def safe_request(url, retries=2):
+def safe_request(url, retries=2, referer=None):
     for _ in range(retries):
         try:
-            r = requests.get(url, headers=HEADERS, verify=False, timeout=15)
-            if r.status_code == 200:
+            headers = HEADERS.copy()
+            if referer:
+                headers["Referer"] = referer
+            r = requests.get(url, headers=headers, verify=False, timeout=15, allow_redirects=True)
+            if r.status_code == 200 and "text/html" in r.headers.get("Content-Type", ""):
                 return r
         except Exception as e:
             logger.warning(f"Request failed: {e}")
@@ -121,19 +124,43 @@ def get_intermediate_links(quality_page_url):
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
-    if not r: return []
+    if not r:
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
+
+    # Handle meta refresh redirects
+    refresh = soup.find("meta", attrs={"http-equiv": "refresh"})
+    if refresh:
+        content = refresh.get("content", "")
+        m = re.search(r'url=(.+)', content, re.IGNORECASE)
+        if m:
+            redirected_url = m.group(1).strip()
+            if redirected_url.startswith("/"):
+                redirected_url = urljoin(cloud_url, redirected_url)
+            links.append(("Auto-Redirect", redirected_url))
+
+    # Find <a>, <button> with possible onclick
     for tag in soup.find_all(["a", "button"]):
         href = tag.get("href") or tag.get("data-href")
+        if not href:
+            onclick = tag.get("onclick", "")
+            m = re.search(r"location\.href='([^']+)'", onclick)
+            if m:
+                href = m.group(1)
         label = tag.get_text(strip=True)
-        if href and label and href.startswith("http"):
+        if href and label and href.startswith("http") and not any(
+                x in label.lower() for x in ["login", "signup"]):
             links.append((label, href))
+
+    # Find <form> with action
     for form in soup.find_all("form"):
         action = form.get("action")
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
             links.append((label, action))
+
     return links
 
 
