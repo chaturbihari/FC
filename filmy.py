@@ -53,13 +53,38 @@ def safe_request(url, retries=2, referer=None):
             headers = HEADERS.copy()
             if referer:
                 headers["Referer"] = referer
-            r = requests.get(url, headers=headers, verify=False, timeout=15, allow_redirects=True)
-            if r.status_code == 200 and "text/html" in r.headers.get("Content-Type", ""):
+
+            # 🚫 Don't follow HTTP 301/302 redirects
+            r = requests.get(
+                url,
+                headers=headers,
+                verify=False,
+                timeout=15,
+                allow_redirects=False
+            )
+
+            # ✅ Only allow direct HTML responses
+            if r.status_code in (200, 301, 302) and "text/html" in r.headers.get("Content-Type", ""):
+
+                # 🚫 Strip out <meta http-equiv="refresh"> redirection
+                cleaned_html = re.sub(
+                    r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*>',
+                    '',
+                    r.text,
+                    flags=re.IGNORECASE
+                )
+
+                # Replace the response text with cleaned version
+                r._content = cleaned_html.encode("utf-8")  # replace internal content for BeautifulSoup to use
                 return r
+
         except Exception as e:
             logger.warning(f"Request failed: {e}")
+
         time.sleep(1)
+
     return None
+
 
 def get_latest_movie_links():
     logger.info("Fetching homepage")
@@ -186,26 +211,23 @@ async def monitor():
                     for quality, view_urls in qlinks.items():
                         for view_url in view_urls:
                             intermediate_links = await asyncio.to_thread(get_intermediate_links, view_url)
-
                             if not intermediate_links:
                                 logger.warning(f"⚠️ No intermediate links for: {view_url}")
-                                # Fetch raw page HTML
                                 r = await asyncio.to_thread(safe_request, view_url)
                                 if r:
-                                    filename = f"page_{int(time.time())}.html"
-                                    with open(filename, "w", encoding="utf-8") as f:
-                                        f.write(r.text)
                                     try:
+                                        from io import BytesIO
+                                        bio = BytesIO(r.text.encode("utf-8"))
+                                        bio.name = "page_debug.html"
                                         await app.send_document(
                                             OWNER_ID,
-                                            filename,
+                                            document=bio,
                                             caption=f"⚠️ No intermediate links for:\n{view_url}",
                                         )
                                     except Exception as e:
                                         logger.error(f"❌ Failed to send HTML to owner: {e}")
-                                    finally:
-                                        os.remove(filename)
-                                continue  # Skip to next view_url
+                                continue
+
 
                             for provider, link in intermediate_links:
                                 finals = await asyncio.to_thread(extract_final_links, link)
