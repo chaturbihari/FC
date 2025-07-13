@@ -19,7 +19,7 @@ def run():
 def ping_self():
     while True:
         try:
-            url = "https://fc-cbhg.onrender.com"
+            url = "https://test-ujwm.onrender.com"
             requests.get(url)
             print("✅ Self-ping sent")
         except Exception as e:
