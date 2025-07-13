@@ -18,16 +18,17 @@ import nest_asyncio
 nest_asyncio.apply()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-API_ID      = int(os.environ.get("API_ID",       "25833520"))
-API_HASH    = os.environ.get("API_HASH",          "7d012a6cbfabc2...")
-BOT_TOKEN   = os.environ.get("FF_BOT_TOKEN",      "8091169950:AA...")
-CHANNEL_ID  = int(os.environ.get("FF_CHANNEL_ID", "-1002557597877"))
-OWNER_ID    = int(os.environ.get("FF_OWNER_ID",    "921365334"))
+API_ID = int(os.environ.get("API_ID", "25833520"))
+API_HASH = os.environ.get("API_HASH", "7d012a6cbfabc2d0436d7a09d8362af7")
+BOT_TOKEN = os.environ.get("FF_BOT_TOKEN","8091169950:AAGNyiZ8vqrqCiPhZcks-Av3lDQy2GIcZuk")
+CHANNEL_ID = int(os.environ.get("FF_CHANNEL_ID", "-1002557597877"))
+OWNER_ID = int(os.environ.get("FF_OWNER_ID", "921365334"))
 BASE_URL    = "https://filmyfly.party/"
 filmy_FILE  = "filmy.json"
 
 HEADERS = {
-    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)…",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
+    "Referer": "https://linkmake.in/",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
