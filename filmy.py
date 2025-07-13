@@ -206,11 +206,37 @@ async def extract_final_links(cloud_url: str) -> list[tuple[str, str]]:
         return []
 
 
-def get_title_from_intermediate(url):
-    r = safe_request(url)
-    if not r: return "Untitled"
-    t = BeautifulSoup(r.text, "html.parser").find("title")
-    return t.text.strip() if t else "Untitled"
+async def get_title_from_intermediate(url: str) -> str:
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent=HEADERS["User-Agent"],
+                locale="en-US",
+                timezone_id="Asia/Kolkata",
+                viewport={"width": 1280, "height": 720}
+            )
+            page = await context.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(3000)
+
+            # Try div.title
+            el = await page.query_selector("div.title")
+            if el:
+                text = (await el.inner_text()).strip()
+                if text:
+                    await browser.close()
+                    return text
+
+            # Fallback to <title>
+            html_title = await page.title()
+            await browser.close()
+            return html_title.strip() or "Untitled"
+
+    except Exception as e:
+        logger.warning(f"[get_title_from_intermediate] Playwright error on {url}: {e}")
+        return "Untitled"
+
 
 def clean(txt):
     return re.sub(r"[\[\]_`*]", "", txt)
@@ -277,7 +303,7 @@ async def monitor():
                                 await asyncio.sleep(2)
                                 finals = await extract_final_links(il)
                             if finals:
-                                title = await asyncio.to_thread(get_title_from_intermediate, il)
+                                title = await get_title_from_intermediate(il)
                                 await send_quality_message(title, quality, provider, finals)
                 seen.add(murl)
                 save_filmy(seen)
