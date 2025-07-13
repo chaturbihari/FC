@@ -136,30 +136,58 @@ async def get_intermediate_links_playwright(url):
         logger.warning(f"Playwright fallback failed: {e}")
     return links
 
+async def extract_final_links_playwright(cloud_url):
+    links = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto(cloud_url, timeout=30000)
+            await page.wait_for_timeout(1500)
+            elements = await page.query_selector_all("a, button, form")
+
+            for el in elements:
+                href = await el.get_attribute("href") or await el.get_attribute("data-href") or await el.get_attribute("action")
+                label = (await el.inner_text()).strip()
+                if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
+                    links.append((label, href))
+
+            await browser.close()
+    except Exception as e:
+        logger.warning(f"Playwright final-link fallback failed: {e}")
+    return links
 
 
 def extract_final_links(cloud_url):
-    logger.debug(f"Extracting final download links from: {cloud_url}")
+    logger.debug(f"Requesting URL: {cloud_url}")
     r = safe_request(cloud_url)
     if not r:
-        logger.warning(f"❌ No response from final page: {cloud_url}")
+        logger.warning(f"❌ Failed to fetch: {cloud_url}")
         return []
+
+    if "cloudflare.com" in r.url:
+        logger.warning(f"🚫 Stuck at Cloudflare challenge: {r.url}")
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
+
     for tag in soup.find_all(["a", "button"]):
         href = tag.get("href") or tag.get("data-href")
         label = tag.get_text(strip=True)
         if href and label and href.startswith("http"):
-            logger.debug(f"Final link: {label} => {href}")
             links.append((label, href))
+
     for form in soup.find_all("form"):
         action = form.get("action")
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
-            logger.debug(f"Final form link: {label} => {action}")
             links.append((label, action))
-    logger.debug(f"Extracted {len(links)} final links from cloud page")
+
+    logger.debug(f"[{cloud_url}] Extracted {len(links)} final links")
     return links
+
 
 def get_title_from_intermediate(url):
     logger.debug(f"Extracting title from: {url}")
@@ -212,10 +240,10 @@ async def monitor():
                                 intermediate_links = await get_intermediate_links_playwright(view_url)
                             for provider, link in intermediate_links:
                                 finals = await asyncio.to_thread(extract_final_links, link)
+                                finals = await asyncio.to_thread(extract_final_links, link)
                                 if not finals:
-                                    logger.warning(f"🔁 Retrying final link for: {link}")
-                                    await asyncio.sleep(2)
-                                    finals = await asyncio.to_thread(extract_final_links, link)
+                                    logger.warning(f"🌐 Falling back to Playwright for final: {link}")
+                                    finals = await extract_final_links_playwright(link)
                                 if finals:
                                     title = await asyncio.to_thread(get_title_from_intermediate, link)
                                     await send_quality_message(title, quality, provider, finals)
