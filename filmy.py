@@ -119,32 +119,37 @@ def get_quality_links(movie_url):
             q[qname].append(urljoin(BASE_URL, a["href"]))
     return q
 
-
-
 async def get_intermediate_links(quality_page_url):
     links = []
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)  # headless=False to watch
+            browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
-            page = await context.new_page()
-            await page.goto(quality_page_url, timeout=20000)
-            await page.wait_for_timeout(3000)  # Wait for JS to load buttons
+            
+            # Prevent popups (new tabs/windows)
+            async def block_popup(route):
+                await route.abort()
+            await context.route("**", block_popup)
 
-            # ✅ Select all <a> inside divs like your screenshot
+            page = await context.new_page()
+            await page.goto(quality_page_url, timeout=20000, wait_until="domcontentloaded")
+
+            # Give time for JS to render buttons (but don't wait forever)
+            await page.wait_for_timeout(3000)
+
+            # ✅ Only collect download anchors visible on *this page*
             anchors = await page.query_selector_all("a[href^='http']")
             for a in anchors:
                 href = await a.get_attribute("href")
                 label = await a.inner_text()
-                if href and label and not any(x in label.lower() for x in ["login", "signup"]):
+                if href and label and not any(x in label.lower() for x in ["login", "signup", "cloudflare"]):
                     links.append((label.strip(), href.strip()))
 
             await browser.close()
+
     except Exception as e:
         logger.warning(f"Playwright error on {quality_page_url}: {e}")
-
     return links
-
 
 
 def extract_final_links(cloud_url):
