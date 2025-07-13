@@ -160,8 +160,8 @@ async def monitor():
                 logger.info(f"Processing: {movie_url}")
                 try:
                     qlinks = await asyncio.to_thread(get_quality_links, movie_url)
-                    for quality, view_urls in qlinks.items():
-                        for view_url in view_urls:
+                    for quality, view_items in qlinks.items():
+                        for label, view_url in view_items:  # ✅ Unpack (label, url) tuple
                             intermediate_links = await get_intermediate_links(view_url)
                             for provider, link in intermediate_links:
                                 finals = await extract_final_links(link)
@@ -180,6 +180,7 @@ async def monitor():
             logger.error(f"Monitor loop error: {e}")
             await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
         await asyncio.sleep(300)
+
 
 # --- Start Bot ---
 async def main():
