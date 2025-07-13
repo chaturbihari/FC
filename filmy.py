@@ -53,13 +53,18 @@ def save_filmy(filmy):
 
 # ── Safe Request (no redirects, strip meta-refresh) ──────────────────────────
 def safe_request(url, retries=2, referer=None):
+    """
+    Fetch the URL without following redirects and return any HTML response
+    with status code < 400, so that challenge or blocked pages still come through.
+    Strips out any <meta http-equiv="refresh"> tags to prevent automatic redirects.
+    """
     for _ in range(retries):
         try:
             headers = HEADERS.copy()
             if referer:
                 headers["Referer"] = referer
 
-            # 🚫 disable HTTP redirects
+            # Do not follow redirects so we capture 3xx/4xx HTML bodies
             r = requests.get(
                 url,
                 headers=headers,
@@ -68,24 +73,26 @@ def safe_request(url, retries=2, referer=None):
                 allow_redirects=False
             )
 
-            # accept only HTML
-            ct = r.headers.get("Content-Type", "")
-            if r.status_code in (200, 301, 302) and "text/html" in ct:
-                # strip out any <meta http-equiv="refresh">
-                cleaned = re.sub(
+            content_type = r.headers.get("Content-Type", "")
+            # Accept any HTML response under 400 for debugging
+            if r.status_code < 400 and "html" in content_type.lower():
+                # Remove meta-refresh tags
+                cleaned_html = re.sub(
                     r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*>',
                     "",
                     r.text,
                     flags=re.IGNORECASE
                 )
-                # replace internal content so BeautifulSoup sees cleaned HTML
-                r._content = cleaned.encode("utf-8")
+                # Override the ._content so r.text returns cleaned_html
+                r._content = cleaned_html.encode("utf-8")
                 return r
 
         except Exception as e:
-            logger.warning(f"Request failed ({url}): {e}")
+            logger.warning(f"safe_request failed for {url}: {e}")
         time.sleep(1)
+
     return None
+
 
 # ── Scraping Helpers ─────────────────────────────────────────────────────────
 def get_latest_movie_links():
@@ -201,19 +208,28 @@ async def monitor():
                         ilinks = await asyncio.to_thread(get_intermediate_links, vurl)
                         if not ilinks:
                             logger.warning(f"⚠️ No intermediate links for: {vurl}")
-                            # save raw HTML and send to owner
+                        
+                            # — save whatever HTML we did get, and send it to the OWNER_ID —
                             r = await asyncio.to_thread(safe_request, vurl)
                             if r:
-                                fn = f"page_{int(time.time())}.html"
+                                fn = f"raw_page_{int(time.time())}.html"
                                 with open(fn, "w", encoding="utf-8") as f:
                                     f.write(r.text)
+                        
                                 try:
-                                    await app.send_document(OWNER_ID, fn, caption=f"⚠️ No intermediate links for:\n{vurl}")
+                                    await app.send_document(
+                                        OWNER_ID,
+                                        fn,
+                                        caption=f"⚠️ No intermediate links for:\n{vurl}"
+                                    )
                                 except Exception as exc:
-                                    logger.error(f"❌ Could not send HTML doc: {exc}")
+                                    logger.error(f"❌ Could not send HTML doc to owner: {exc}")
                                 finally:
                                     os.remove(fn)
+                        
+                            # skip this view_url and move on
                             continue
+
                         for provider, il in ilinks:
                             finals = await asyncio.to_thread(extract_final_links, il)
                             if not finals:
