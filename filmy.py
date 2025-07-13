@@ -98,8 +98,19 @@ async def get_intermediate_links(playwright, quality_page_url):
     page = await browser.new_page()
     html = await get_html(page, quality_page_url)
     links = []
+
     if html:
         soup = BeautifulSoup(html, "html.parser")
+
+        # NEW: Look for div.dlink.dl > a
+        for div in soup.select("div.dlink.dl > a[href]"):
+            href = div.get("href")
+            label = div.get_text(strip=True)
+            if href and href.startswith("http"):
+                logger.debug(f"🔗 Found link: {label} -> {href}")
+                links.append((label, href))
+
+        # Fallback: existing logic (in case structure changes)
         for tag in soup.find_all(["a", "button"]):
             href = tag.get("href") or tag.get("data-href")
             if not href:
@@ -109,12 +120,13 @@ async def get_intermediate_links(playwright, quality_page_url):
                     href = m.group(1)
             label = tag.get_text(strip=True)
             if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
+                logger.debug(f"🔗 Fallback link: {label} -> {href}")
                 links.append((label, href))
-        logger.info(f"✅ Intermediate links found: {len(links)}")
-    else:
-        logger.warning(f"⚠️ Failed to get HTML for intermediate page: {quality_page_url}")
+
     await browser.close()
+    logger.info(f"✅ Intermediate links found: {len(links)}")
     return links
+
 
 async def extract_final_links(playwright, cloud_url):
     logger.info(f"🔗 Extracting final links from: {cloud_url}")
