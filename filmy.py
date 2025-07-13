@@ -164,34 +164,26 @@ async def get_intermediate_links(view_url: str) -> list[tuple[str, str]]:
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
-    if not r: return []
+    if not r:
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
     out = []
-    # auto-redirect via meta (we already stripped, but still capture)
-    meta = soup.find("meta", attrs={"http-equiv":"refresh"})
-    if meta:
-        c = meta.get("content","")
-        m = re.search(r'url=(.+)', c, re.IGNORECASE)
-        if m:
-            u = m.group(1).strip()
-            if u.startswith("/"): u = urljoin(cloud_url, u)
-            out.append(("Auto-Redirect", u))
-    for tag in soup.find_all(["a","button"]):
-        href = tag.get("href") or tag.get("data-href")
-        onclick = tag.get("onclick","")
-        if not href and "location.href" in onclick:
-            m = re.search(r"location\.href='([^']+)'", onclick)
-            if m: href = m.group(1)
-        lbl = tag.get_text(strip=True)
-        if href and lbl and href.startswith("http"):
-            out.append((lbl, href))
-    for form in soup.find_all("form"):
-        action = form.get("action","")
-        lbl = form.get_text(strip=True)
-        if action.startswith("http"):
-            out.append((lbl, action))
+
+    container = soup.find("div", class_="container")
+    if not container:
+        logger.warning("⚠️ No .container div found.")
+        return out
+
+    for a in container.find_all("a", href=True):
+        href = a["href"].strip()
+        label = a.get_text(strip=True)
+        if href.startswith("http") and label:
+            out.append((label, href))
+
     logger.info(f"🧩 Final links from {cloud_url}: {out}")
     return out
+
 
 def get_title_from_intermediate(url):
     r = safe_request(url)
