@@ -86,7 +86,9 @@ def get_quality_links(movie_url):
 
 def get_intermediate_links(quality_page_url):
     r = safe_request(quality_page_url)
-    if not r: return []
+    if not r:
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
     for tag in soup.find_all(["a", "button"]):
@@ -97,10 +99,11 @@ def get_intermediate_links(quality_page_url):
             if m:
                 href = m.group(1)
         label = tag.get_text(strip=True)
-        logger.info(f"🔗 Intermediate link found: {label} → {href}")
-        if href and label and href.startswith("http") and not any(x in label.lower() for x in ["login", "signup"]):
+        if href and label and href.startswith("http") and not any(
+                x in label.lower() for x in ["login", "signup"]):
             links.append((label, href))
     return links
+
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
@@ -170,12 +173,12 @@ async def send_quality_message(title, quality, provider, links):
 
 async def monitor():
     filmy = load_filmy()
-    logger.info(f"📦 Loaded {len(filmy)} filmy entries")
+    logger.info(f"Loaded {len(filmy)} filmy entries")
     while True:
         try:
             movies = await asyncio.to_thread(get_latest_movie_links)
             new = [m for m in movies if m not in filmy]
-            logger.info(f"📥 Found {len(new)} new movies")
+            logger.info(f"Found {len(new)} new movies")
             for movie_url in new:
                 logger.info(f"Processing: {movie_url}")
                 try:
@@ -183,28 +186,50 @@ async def monitor():
                     for quality, view_urls in qlinks.items():
                         for view_url in view_urls:
                             intermediate_links = await asyncio.to_thread(get_intermediate_links, view_url)
+
                             if not intermediate_links:
                                 logger.warning(f"⚠️ No intermediate links for: {view_url}")
+                                # Fetch raw page HTML
+                                r = await asyncio.to_thread(safe_request, view_url)
+                                if r:
+                                    filename = f"page_{int(time.time())}.html"
+                                    with open(filename, "w", encoding="utf-8") as f:
+                                        f.write(r.text)
+                                    try:
+                                        await app.send_document(
+                                            OWNER_ID,
+                                            filename,
+                                            caption=f"⚠️ No intermediate links for:\n{view_url}",
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"❌ Failed to send HTML to owner: {e}")
+                                    finally:
+                                        os.remove(filename)
+                                continue  # Skip to next view_url
+
                             for provider, link in intermediate_links:
-                                logger.info(f"➡️ Visiting intermediate link: {link}")
                                 finals = await asyncio.to_thread(extract_final_links, link)
                                 if not finals:
-                                    logger.warning(f"⚠️ No final links for: {link}")
+                                    logger.warning(f"No final links for: {link}")
                                     await asyncio.sleep(2)
                                     finals = await asyncio.to_thread(extract_final_links, link)
+
                                 if finals:
                                     title = await asyncio.to_thread(get_title_from_intermediate, link)
-                                    logger.info(f"✅ Final links found for: {title}")
                                     await send_quality_message(title, quality, provider, finals)
+
                     filmy.add(movie_url)
                     save_filmy(filmy)
+
                 except Exception as e:
-                    logger.error(f"❌ Error while processing movie: {movie_url} - {e}")
+                    logger.error(f"Error while processing movie: {movie_url} - {e}")
                     await app.send_message(OWNER_ID, f"⚠️ Error on: {movie_url}\n\n{e}")
         except Exception as e:
-            logger.error(f"🚨 Monitor loop error: {e}")
+            logger.error(f"Monitor loop error: {e}")
             await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
+
         await asyncio.sleep(300)
+
 
 async def main():
     await app.start()
