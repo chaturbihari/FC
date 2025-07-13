@@ -119,37 +119,47 @@ def get_quality_links(movie_url):
             q[qname].append(urljoin(BASE_URL, a["href"]))
     return q
 
-async def get_intermediate_links(quality_page_url):
-    links = []
+async def get_intermediate_links(view_url: str) -> list[tuple[str, str]]:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
-            
-            # Prevent popups (new tabs/windows)
-            async def block_popup(route):
-                await route.abort()
-            await context.route("**", block_popup)
-
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+                timezone_id="Asia/Kolkata",
+                viewport={"width": 1280, "height": 720}
+            )
             page = await context.new_page()
-            await page.goto(quality_page_url, timeout=20000, wait_until="domcontentloaded")
 
-            # Give time for JS to render buttons (but don't wait forever)
+            # Go to the link and wait for JS to execute
+            await page.goto(view_url, wait_until="domcontentloaded", timeout=20000)
+
+            # Wait up to 5 seconds for expected links to appear
             await page.wait_for_timeout(3000)
 
-            # ✅ Only collect download anchors visible on *this page*
-            anchors = await page.query_selector_all("a[href^='http']")
+            # Prevent opening popups or redirects
+            async def on_popup(popup):
+                await popup.close()
+            page.on("popup", on_popup)
+
+            # Extract links matching the known pattern
+            anchors = await page.query_selector_all("a[href*='filesd'], a[href*='filesdl']")
+            results = []
             for a in anchors:
                 href = await a.get_attribute("href")
-                label = await a.inner_text()
-                if href and label and not any(x in label.lower() for x in ["login", "signup", "cloudflare"]):
-                    links.append((label.strip(), href.strip()))
+                text = (await a.inner_text()).strip()
+                if href:
+                    results.append((text, href))
 
             await browser.close()
+            return results
 
     except Exception as e:
-        logger.warning(f"Playwright error on {quality_page_url}: {e}")
-    return links
+        print(f"[WARNING] Playwright error on {view_url}: {e}")
+        return []
 
 
 def extract_final_links(cloud_url):
