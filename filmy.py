@@ -35,6 +35,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler()]
 )
+# Silence overly verbose Pyrogram internals
+logging.getLogger("pyrogram.session.session").setLevel(logging.WARNING)
+logging.getLogger("pyrogram.dispatcher").setLevel(logging.INFO)
+logging.getLogger("pyrogram.connection.connection").setLevel(logging.WARNING)
+
 logger = logging.getLogger("FilmyFlyBot")
 
 # --- Pyrogram Client ---
@@ -143,10 +148,17 @@ async def extract_final_links_playwright(cloud_url):
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             page = await context.new_page()
-            await page.goto(cloud_url, timeout=30000)
+            logger.debug(f"Playwright: Navigating to {cloud_url}")
+            resp = await page.goto(cloud_url, wait_until='networkidle', timeout=45000)
+
+            # Wait until we're not on Cloudflare anymore
+            if "cloudflare.com" in page.url:
+                logger.warning(f"Still stuck on Cloudflare after navigation: {page.url}")
+                await browser.close()
+                return []
+
             await page.wait_for_timeout(1500)
             elements = await page.query_selector_all("a, button, form")
-
             for el in elements:
                 href = await el.get_attribute("href") or await el.get_attribute("data-href") or await el.get_attribute("action")
                 label = (await el.inner_text()).strip()
@@ -157,6 +169,7 @@ async def extract_final_links_playwright(cloud_url):
     except Exception as e:
         logger.warning(f"Playwright final-link fallback failed: {e}")
     return links
+
 
 
 def extract_final_links(cloud_url):
