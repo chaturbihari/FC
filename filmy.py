@@ -129,11 +129,10 @@ def clean(text):
 # --- Telegram Messaging ---
 async def send_quality_message(title, quality, provider, links):
     msg = f"🎬 `{clean(title)}`\n\n"
-    msg += f"📦 **Quality**: `{clean(quality)}`\n"
-    msg += f"🚀 **Provider**: `{clean(provider)}`\n\n"
+    msg += f"🚀 **Quality**: `{clean(provider)}`\n\n"
     for label, url in links:
         msg += f"• [{clean(label)}]({url})\n"
-    msg += "\n🔗 Source: [FilmyFly](https://filmyfly.loan/)"
+    msg += "\n🌐 Scraped from [FilmyFly](https://telegram.me/Silent_Bots)"
     try:
         await app.send_message(
             chat_id=CHANNEL_ID,
