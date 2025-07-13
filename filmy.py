@@ -73,48 +73,41 @@ def get_quality_links(movie_url):
     if not r: return {}
     soup = BeautifulSoup(r.text, "html.parser")
     qlinks = defaultdict(list)
+
     for a in soup.find_all("a", href=True, string=True):
-        text = a.get_text().strip()
-        if "download" in text.lower() and "/view/" in a["href"]:
-            qual = re.search(r"\{(.+?)\}", text)
-            quality = qual.group(1) if qual else "Other"
-            full = urljoin(BASE_URL, a["href"])
-            qlinks[quality].append(full)
+        text = a.get_text(strip=True)
+        href = a['href']
+        if "download" in text.lower() and "/view/" in href:
+            match = re.search(r'(\d{3,4}p)', text)
+            quality = match.group(1) if match else "Other"
+            qlinks[quality].append((text, href))
+    
     return dict(qlinks)
 
-def extract_links_with_playwright(url):
+
+async def extract_links_with_playwright(url, types=("a", "button")):
     links = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        try:
-            page.goto(url, timeout=30000)
-            page.wait_for_selector("a, button", timeout=10000)
-            elements = page.query_selector_all("a, button")
-
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto(url, timeout=30000)
+            await page.wait_for_timeout(3000)
+            elements = await page.locator(f'{types[0]},{types[1]}').all()
             for el in elements:
-                href = el.get_attribute("href") or el.get_attribute("data-href")
-                onclick = el.get_attribute("onclick")
-                label = el.inner_text().strip()
-
-                # Support onclick-based navigation
-                if not href and onclick:
-                    m = re.search(r"location\.href='([^']+)'", onclick)
+                href = await el.get_attribute("href") or await el.get_attribute("data-href")
+                if not href:
+                    onclick = await el.get_attribute("onclick") or ""
+                    m = re.search(r"location\\.href='([^']+)'", onclick)
                     if m:
                         href = m.group(1)
-
-                # Only valid, direct, labeled download links
-                if (
-                    href and href.startswith("http") and
-                    label and "download" in label.lower() and
-                    all(x not in label.lower() for x in ["login", "signup"])
-                ):
+                label = (await el.inner_text()).strip()
+                if href and href.startswith("http") and label and not any(x in label.lower() for x in ["login", "signup"]):
                     links.append((label, href))
-                    break  # Stop at the first relevant download button
-        except Exception as e:
-            print("Playwright error:", e)
-        finally:
-            browser.close()
+            await browser.close()
+    except Exception as e:
+        logger.warning(f"Playwright error: {e}")
     return links
 
 get_intermediate_links = extract_links_with_playwright
@@ -184,18 +177,16 @@ async def monitor():
                     logger.error(f"Error while processing movie: {movie_url} - {e}")
                     await app.send_message(OWNER_ID, f"⚠️ Error on: {movie_url}\n\n{e}")
         except Exception as e:
-            logger.exception("Fatal monitor loop error:")
-            await app.send_message(OWNER_ID, f"💥 Fatal error in loop:\n\n{e}")
-            await asyncio.sleep(30)  
+            logger.error(f"Monitor loop error: {e}")
+            await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
+        await asyncio.sleep(300)
 
 # --- Start Bot ---
 async def main():
     await app.start()
     asyncio.create_task(monitor())
     await idle()
-    logger.warning("❗ idle() exited — bot is shutting down.")
     await app.stop()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
