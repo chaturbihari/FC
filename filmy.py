@@ -164,22 +164,28 @@ async def get_intermediate_links(view_url: str) -> list[tuple[str, str]]:
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
-    if not r: return []
+    if not r:
+        return []
+
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
+
     for tag in soup.find_all(["a", "button"]):
         href = tag.get("href") or tag.get("data-href")
         label = tag.get_text(strip=True)
         if href and label and href.startswith("http"):
             links.append((label, href))
+
     for form in soup.find_all("form"):
         action = form.get("action")
         label = form.get_text(strip=True)
         if action and action.startswith("http"):
             links.append((label, action))
-    logger.info(f"[extract_final_links] Found {len(out)} links at {cloud_url}")
-    for label, link in out:
+
+    logger.info(f"[extract_final_links] Found {len(links)} links at {cloud_url}")
+    for label, link in links:
         logger.info(f"→ {label}: {link}")
+
     return links
 
 def get_title_from_intermediate(url):
