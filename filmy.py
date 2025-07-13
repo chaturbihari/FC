@@ -162,7 +162,7 @@ async def get_intermediate_links(view_url: str) -> list[tuple[str, str]]:
         return []
 
 
-async def extract_final_links_playwright(cloud_url: str) -> list[tuple[str, str]]:
+async def extract_final_links(cloud_url: str) -> list[tuple[str, str]]:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
@@ -275,7 +275,7 @@ async def monitor():
                             if not finals:
                                 logger.warning(f"No final links for: {il}")
                                 await asyncio.sleep(2)
-                                finals = await extract_final_links_playwright(il)
+                                finals = await extract_final_links(il)
                             if finals:
                                 title = await asyncio.to_thread(get_title_from_intermediate, il)
                                 await send_quality_message(title, quality, provider, finals)
