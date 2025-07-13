@@ -127,25 +127,27 @@ def get_intermediate_links(quality_page_url):
     soup = BeautifulSoup(r.text, "html.parser")
     links = []
 
+    # 🔍 Search <a> tags, even if label is in a nested <div>
     for a in soup.find_all("a", href=True):
-        href = a.get("href")
-        label = a.get_text(strip=True)  # This now gets text even inside nested divs!
+        href = a["href"]
+        label = a.get_text(strip=True)  # Handles nested <div> inside <a>
         if href and label and href.startswith("http") and not any(
             x in label.lower() for x in ["login", "signup"]
         ):
             links.append((label, href))
 
-    # OPTIONAL: Check inside scripts for JS redirects (fallback)
+    # 🔄 Also check for JS redirect fallback
     for script in soup.find_all("script"):
         if "location.href" in script.text:
             match = re.search(r'location\.href\s*=\s*[\'"]([^\'"]+)[\'"]', script.text)
             if match:
-                url = match.group(1)
-                if url.startswith("/"):
-                    url = urljoin(quality_page_url, url)
-                links.append(("JS Redirect", url))
+                redirect_url = match.group(1)
+                if redirect_url.startswith("/"):
+                    redirect_url = urljoin(quality_page_url, redirect_url)
+                links.append(("JS Redirect", redirect_url))
 
     return links
+
 
 def extract_final_links(cloud_url):
     r = safe_request(cloud_url)
