@@ -271,7 +271,7 @@ async def monitor():
                             continue
 
                         for provider, il in ilinks:
-                            finals = await asyncio.to_thread(extract_final_links, il)
+                            finals = await extract_final_links(il)
                             if not finals:
                                 logger.warning(f"No final links for: {il}")
                                 await asyncio.sleep(2)
