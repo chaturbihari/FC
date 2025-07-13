@@ -46,4 +46,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # EXPOSE 8080
 
 # Set default command
-CMD ["python", "main.py"]
+CMD ["python", "filmy.py"]
