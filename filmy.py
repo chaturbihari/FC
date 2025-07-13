@@ -12,7 +12,6 @@ from pyrogram.errors import FloodWait
 from playwright.async_api import async_playwright
 import re
 
-# --- Environment Setup ---
 nest_asyncio.apply()
 
 API_ID = int(os.environ.get("API_ID", "25833520"))
@@ -21,17 +20,15 @@ BOT_TOKEN = os.environ.get("FF_BOT_TOKEN", "8091169950:AAGNyiZ8vqrqCiPhZcks-Av3l
 CHANNEL_ID = int(os.environ.get("FF_CHANNEL_ID", "-1002557597877"))
 OWNER_ID = int(os.environ.get("FF_OWNER_ID", "921365334"))
 filmy_FILE = "filmy.json"
-utils.get_peer_type = lambda peer_id: "channel" if str(peer_id).startswith("-100") else "user"
 BASE_URL = "https://filmyfly.party/"
 
-# --- Logging Setup ---
+utils.get_peer_type = lambda peer_id: "channel" if str(peer_id).startswith("-100") else "user"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FilmyFlyBot")
 
-# --- Pyrogram Client ---
 app = Client("filmyfly-bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --- Movie Tracker ---
 def load_filmy():
     if os.path.exists(filmy_FILE):
         with open(filmy_FILE) as f:
@@ -42,35 +39,8 @@ def save_filmy(filmy):
     with open(filmy_FILE, "w") as f:
         json.dump(list(filmy), f, indent=2)
 
-async def launch_browser(playwright):
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-        ]
-    )
-    context = await browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        viewport={"width": 1280, "height": 800},
-        java_script_enabled=True,
-    )
-    page = await context.new_page()
-
-    # Hide `navigator.webdriver`
-    await page.add_init_script("""
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => false
-    });
-    """)
-    return browser, page
-
-
-# --- Playwright Helpers ---
 async def get_html(page, url):
     try:
-        # Block ads and trackers
         async def handle_route(route, request):
             if any(ext in request.url for ext in [".jpg", ".png", ".gif", ".css", ".woff", "googlesyndication", "doubleclick", "adservice", "popads"]):
                 await route.abort()
@@ -78,37 +48,28 @@ async def get_html(page, url):
                 await route.continue_()
 
         await page.route("**/*", handle_route)
-
-        # Catch popup windows (ads)
         page.on("popup", lambda popup: asyncio.create_task(popup.close()))
-
-        # Don't wait for full load — many ad-heavy sites never truly "load"
         await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-
-        # Optional: wait for real content to load (like download buttons)
-        # await page.wait_for_selector("a[href*='linkmake']", timeout=5000)
-
         return await page.content()
-
     except Exception as e:
-        logger.warning(f"Playwright failed to load: {url} - {e}")
+        logger.warning(f"Failed to load {url}: {e}")
         return None
 
 async def get_latest_movie_links(playwright):
-    browser, page = await launch_browser(playwright)
+    browser = await playwright.chromium.launch(headless=True)
+    page = await browser.new_page()
     html = await get_html(page, BASE_URL)
-    if not html:
-        await browser.close()
-        return []
-    soup = BeautifulSoup(html, "html.parser")
-    blocks = soup.find_all("div", class_="A10")
-    links = [urljoin(BASE_URL, a["href"].strip()) for b in blocks if (a := b.find("a", href=True))]
+    links = []
+    if html:
+        soup = BeautifulSoup(html, "html.parser")
+        blocks = soup.find_all("div", class_="A10")
+        links = [urljoin(BASE_URL, a["href"].strip()) for b in blocks if (a := b.find("a", href=True))]
     await browser.close()
     return list(dict.fromkeys(links))
 
-
 async def get_quality_links(playwright, movie_url):
-    browser, page = await launch_browser(playwright)
+    browser = await playwright.chromium.launch(headless=True)
+    page = await browser.new_page()
     html = await get_html(page, movie_url)
     qlinks = defaultdict(list)
     if html:
@@ -123,9 +84,9 @@ async def get_quality_links(playwright, movie_url):
     await browser.close()
     return dict(qlinks)
 
-
 async def get_intermediate_links(playwright, quality_page_url):
-    browser, page = await launch_browser(playwright)
+    browser = await playwright.chromium.launch(headless=True)
+    page = await browser.new_page()
     html = await get_html(page, quality_page_url)
     links = []
     if html:
@@ -134,7 +95,7 @@ async def get_intermediate_links(playwright, quality_page_url):
             href = tag.get("href") or tag.get("data-href")
             if not href:
                 onclick = tag.get("onclick", "")
-                m = re.search(r"location\\.href='([^']+)'", onclick)
+                m = re.search(r"location\.href='([^']+)'", onclick)
                 if m:
                     href = m.group(1)
             label = tag.get_text(strip=True)
@@ -143,9 +104,9 @@ async def get_intermediate_links(playwright, quality_page_url):
     await browser.close()
     return links
 
-
 async def extract_final_links(playwright, cloud_url):
-    browser, page = await launch_browser(playwright)
+    browser = await playwright.chromium.launch(headless=True)
+    page = await browser.new_page()
     html = await get_html(page, cloud_url)
     links = []
     if html:
@@ -163,9 +124,9 @@ async def extract_final_links(playwright, cloud_url):
     await browser.close()
     return links
 
-
 async def get_title_from_intermediate(playwright, url):
-    browser, page = await launch_browser(playwright)
+    browser = await playwright.chromium.launch(headless=True)
+    page = await browser.new_page()
     html = await get_html(page, url)
     title = "Untitled"
     if html:
@@ -176,8 +137,6 @@ async def get_title_from_intermediate(playwright, url):
     await browser.close()
     return title
 
-
-# --- Telegram Messaging ---
 def clean(text):
     return re.sub(r"[\[\]_`*]", "", text)
 
@@ -201,7 +160,6 @@ async def send_quality_message(title, quality, provider, links):
         logger.error(f"Send error: {e}")
         await app.send_message(OWNER_ID, f"❌ Send Error for `{title}`\n\n{e}")
 
-# --- Monitor Task ---
 async def monitor():
     filmy = load_filmy()
     logger.info(f"Loaded {len(filmy)} filmy entries")
@@ -221,7 +179,6 @@ async def monitor():
                                 for provider, link in intermediate_links:
                                     finals = await extract_final_links(playwright, link)
                                     if not finals:
-                                        logger.warning(f"No final links for: {link}")
                                         await asyncio.sleep(2)
                                         finals = await extract_final_links(playwright, link)
                                     if finals:
@@ -237,7 +194,6 @@ async def monitor():
                 await app.send_message(OWNER_ID, f"🚨 Monitor loop crashed:\n\n{e}")
             await asyncio.sleep(300)
 
-# --- Start Bot ---
 async def main():
     await app.start()
     asyncio.create_task(monitor())
