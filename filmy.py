@@ -23,7 +23,7 @@ API_HASH = os.environ.get("API_HASH", "7d012a6cbfabc2d0436d7a09d8362af7")
 BOT_TOKEN = os.environ.get("FF_BOT_TOKEN","8091169950:AAGNyiZ8vqrqCiPhZcks-Av3lDQy2GIcZuk")
 CHANNEL_ID = int(os.environ.get("FF_CHANNEL_ID", "-1002557597877"))
 OWNER_ID = int(os.environ.get("FF_OWNER_ID", "921365334"))
-BASE_URL    = "https://filmyfly.party/"
+BASE_URL    = "https://filmyfly.trade/"
 filmy_FILE  = "filmy.json"
 
 HEADERS = {
